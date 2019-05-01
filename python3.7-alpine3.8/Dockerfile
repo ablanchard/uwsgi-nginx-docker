@@ -1,4 +1,4 @@
-FROM python:3.7-alpine3.8
+FROM alpine-opencv:latest
 
 LABEL maintainer="Sebastian Ramirez <tiangolo@gmail.com>"
 
@@ -148,24 +148,15 @@ EXPOSE 80
 EXPOSE 443
 
 # Install uWSGI
-RUN apk add --no-cache uwsgi-python3
+RUN apk add --repository http://dl-cdn.alpinelinux.org/alpine/edge/main \
+--update --no-cache python3-dev && \
+ apk add --no-cache --virtual .build-deps gcc libc-dev \
+    && pip install --upgrade pip gunicorn meinheld \
+&& apk del .build-deps gcc libc-dev
 
 # Copy the base uWSGI ini file to enable default dynamic uwsgi process number
-COPY uwsgi.ini /etc/uwsgi/
+COPY ./gunicorn_conf.py /gunicorn_conf.py
 
-# Install Supervisord
-RUN apk add --no-cache supervisor
-# Custom Supervisord config
-COPY supervisord.ini /etc/supervisor.d/supervisord.ini
-
-# Which uWSGI .ini file should be used, to make it customizable
-ENV UWSGI_INI /app/uwsgi.ini
-
-# By default, run 2 processes
-ENV UWSGI_CHEAPER 2
-
-# By default, when on demand, run up to 16 processes
-ENV UWSGI_PROCESSES 16
 
 # By default, allow unlimited file sizes, modify it to limit the file sizes
 # To have a maximum of 1 MB (Nginx's default) change the line to:
@@ -189,6 +180,13 @@ ENTRYPOINT ["sh", "/entrypoint.sh"]
 
 # Add demo app
 COPY ./app /app
-WORKDIR /app
+WORKDIR /app/
 
-CMD ["/usr/bin/supervisord"]
+COPY ./start.sh /start.sh
+RUN chmod +x /start.sh
+
+ENV PYTHONPATH=/app
+
+# Run the start script, it will check for an /app/prestart.sh script (e.g. for migrations)
+# And then will start Gunicorn with Meinheld
+CMD ["/start.sh"]
